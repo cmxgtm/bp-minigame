@@ -14,8 +14,10 @@ const state = {
   score: 0,
   best: Number(localStorage.getItem('bpFlappyBest') || 0),
   frame: 0,
+  lastTs: 0,
   pipes: [],
-  pipeSpawnGap: 92,
+  pipeSpawnProgress: 0,
+  pipeSpawnDistance: 240,
   bird: {
     x: canvas.width * 0.26,
     y: canvas.height * 0.45,
@@ -29,7 +31,9 @@ const physics = {
   gravity: 0.34,
   flapImpulse: -6.4,
   maxDownSpeed: 8.6,
-  pipeSpeed: 2.6,
+  basePipeSpeed: 2.6,
+  speedPerScore: 0.04,
+  maxPipeSpeed: 4.0,
   pipeWidth: 72,
   gapHeight: 170,
   floorHeight: 82
@@ -123,6 +127,8 @@ function onFlapInput() {
 function startGame() {
   hideModal();
   state.mode = 'running';
+  // Spawn the first pipe sooner so the opening feels responsive.
+  state.pipeSpawnProgress = state.pipeSpawnDistance * 0.55;
   ui.tapLayer.classList.remove('show');
   setMessage('Nhấn hoặc Space để vượt ống. Cố lên!', 'good');
   disableStart(true);
@@ -132,7 +138,9 @@ function resetGame(showHint) {
   state.mode = 'idle';
   state.score = 0;
   state.frame = 0;
+  state.lastTs = 0;
   state.pipes = [];
+  state.pipeSpawnProgress = 0;
   state.bird.x = canvas.width * 0.26;
   state.bird.y = canvas.height * 0.45;
   state.bird.vy = 0;
@@ -153,12 +161,17 @@ function flap() {
   state.bird.rot = -0.22;
 }
 
-function loop() {
-  state.frame += 1;
+function loop(ts) {
+  if (!state.lastTs) state.lastTs = ts;
+  const deltaMs = ts - state.lastTs;
+  state.lastTs = ts;
+  const frameStep = clamp(deltaMs / (1000 / 60), 0.5, 1.8);
+
+  state.frame += frameStep;
 
   if (state.mode === 'running') {
-    updateBird();
-    updatePipes();
+    updateBird(frameStep);
+    updatePipes(frameStep);
     detectGameOver();
   } else if (state.mode === 'idle') {
     idleFloatBird();
@@ -173,19 +186,23 @@ function idleFloatBird() {
   state.bird.rot = Math.sin(state.frame * 0.06) * 0.06;
 }
 
-function updateBird() {
-  state.bird.vy = Math.min(state.bird.vy + physics.gravity, physics.maxDownSpeed);
-  state.bird.y += state.bird.vy;
+function updateBird(frameStep) {
+  state.bird.vy = Math.min(state.bird.vy + physics.gravity * frameStep, physics.maxDownSpeed);
+  state.bird.y += state.bird.vy * frameStep;
   state.bird.rot = clamp((state.bird.vy / 10) * 0.55, -0.24, 0.35);
 }
 
-function updatePipes() {
-  if (state.frame % state.pipeSpawnGap === 0) {
+function updatePipes(frameStep) {
+  const pipeSpeed = getPipeSpeed();
+  state.pipeSpawnProgress += pipeSpeed * frameStep;
+
+  while (state.pipeSpawnProgress >= state.pipeSpawnDistance) {
     spawnPipe();
+    state.pipeSpawnProgress -= state.pipeSpawnDistance;
   }
 
   for (const pipe of state.pipes) {
-    pipe.x -= physics.pipeSpeed;
+    pipe.x -= pipeSpeed * frameStep;
 
     if (!pipe.passed && pipe.x + physics.pipeWidth < state.bird.x) {
       pipe.passed = true;
@@ -200,6 +217,13 @@ function updatePipes() {
   }
 
   state.pipes = state.pipes.filter(pipe => pipe.x + physics.pipeWidth > -20);
+}
+
+function getPipeSpeed() {
+  return Math.min(
+    physics.basePipeSpeed + state.score * physics.speedPerScore,
+    physics.maxPipeSpeed
+  );
 }
 
 function spawnPipe() {
@@ -392,7 +416,7 @@ function drawScoreOverlay() {
     ctx.fillStyle = 'rgba(255, 208, 160, 0.95)';
     ctx.font = '20px Montserrat Alternates, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Flappy BestPrice', canvas.width / 2, 92);
+    ctx.fillText('Flappy BiPi', canvas.width / 2, 92);
     ctx.textAlign = 'start';
   }
 }
