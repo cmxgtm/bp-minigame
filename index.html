@@ -3,168 +3,121 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Rắn & Thang – Thử Thách 5 Lượt!</title>
-
-  <!-- Local font: Montserrat Alternates -->
-
+  <title>Flappy Bird - BestPrice.vn</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
-  <!-- Background atmosphere -->
   <div class="starfield" id="starfield"></div>
   <div class="orb orb-1"></div>
   <div class="orb orb-2"></div>
   <div class="orb orb-3"></div>
 
   <div class="page-wrap">
-
-    <!-- ════ HEADER ════ -->
     <header class="game-header">
       <div class="header-brand">
         <img src="logo.svg" alt="Logo" class="brand-logo" />
         <span class="brand-name">BestPrice.vn</span>
       </div>
       <div class="header-mid">
-        <h1 class="game-title">🎲 Rắn &amp; Thang</h1>
-        <span class="game-subtitle">⚡ Thử Thách 5 Lượt</span>
+        <h1 class="game-title">Flappy Bird</h1>
+        <span class="game-subtitle">Vượt ống - săn quà</span>
       </div>
       <div class="header-prize-hint">
-        <span class="prize-hint-badge">🎫 Giảm giá 50% cho tất cả tour Hàn Quốc!</span>
+        <span class="prize-hint-badge">Giảm giá 50% cho tất cả tour Hàn Quốc!</span>
       </div>
     </header>
 
-    <!-- ════ MAIN ════ -->
     <main class="game-main">
-
-      <!-- ── Board Column ── -->
-      <section class="board-col">
-
-        <!-- Mobile stats strip -->
-        <div class="mob-stats-strip" id="mobStatsStrip">
-          <div class="mob-stat">
-            <span class="mob-stat-lbl">Vị trí</span>
-            <span class="mob-stat-val" id="mobPos">Ô 1</span>
-          </div>
-          <div class="mob-stat-sep"></div>
-          <div class="mob-stat">
-            <span class="mob-stat-lbl">Lượt còn</span>
-            <span class="mob-stat-val" id="mobTurns">5 / 5</span>
-          </div>
-          <div class="mob-stat-sep"></div>
-          <button class="mob-reset-btn" id="mobResetBtn">🔄 Chơi lại</button>
-        </div>
-
-        <!-- Board -->
-        <div class="board-wrap" id="boardWrap">
-          <svg class="board-svg" id="boardSvg" xmlns="http://www.w3.org/2000/svg"></svg>
-          <div class="board-grid" id="boardGrid"></div>
-          <div class="player-token" id="playerToken">
-            <img src="logo.svg" alt="Player" class="token-logo" onerror="this.style.display='none';this.parentNode.textContent='🦊';" />
-          </div>
-        </div>
-
-        <!-- Legend -->
-        <div class="board-legend">
-          <span class="leg-item"><span class="leg-dot ladder-dot"></span>Thang</span>
-          <span class="leg-item"><span class="leg-dot snake-dot"></span>Rắn</span>
-          <span class="leg-item"><span class="leg-dot prize-dot"></span>Giải thưởng</span>
-          <span class="leg-item">🏁 Bắt đầu &nbsp;🏆 Kết thúc</span>
-        </div>
-
-      </section>
-
-      <!-- ── Desktop / Tablet Control Panel ── -->
-      <aside class="ctrl-panel">
-
-        <!-- Dice -->
-        <div class="card dice-card">
-          <div class="dice-wrap">
-            <div class="dice" id="dice"><span class="dice-val" id="diceVal">?</span></div>
-          </div>
-          <p class="roll-label" id="rollLabel">Tung xúc xắc để bắt đầu!</p>
-        </div>
-
-        <!-- Stats -->
-        <div class="card stats-card">
+      <aside class="side-panel info-panel">
+        <div class="card score-card">
           <div class="stat-row">
-            <span class="stat-key">Lượt còn</span>
-            <span class="stat-val" id="turnsVal">5 / 5</span>
+            <span class="stat-key">Điểm hiện tại</span>
+            <span class="stat-val" id="scoreVal">0</span>
           </div>
           <div class="divider"></div>
           <div class="stat-row">
-            <span class="stat-key">Vị trí</span>
-            <span class="stat-val" id="posVal">Ô 1</span>
+            <span class="stat-key">Điểm cao nhất</span>
+            <span class="stat-val" id="bestVal">0</span>
           </div>
         </div>
 
-        <!-- Message -->
         <div class="card msg-card" id="msgCard">
-          <p id="msgText">🎮 Sẵn sàng? Tung xúc xắc nào!</p>
+          <p id="msgText">Sẵn sàng? Nhấn BẮT ĐẦU rồi click/space để flap.</p>
         </div>
 
-        <!-- Buttons -->
         <div class="btn-group">
-          <button class="btn-roll" id="rollBtn">🎲 TUNG XÚC XẮC</button>
-          <button class="btn-reset" id="resetBtn">🔄 CHƠI LẠI</button>
+          <button class="btn-roll" id="startBtn">Bắt đầu</button>
+          <button class="btn-reset" id="resetBtn">Chơi lại</button>
+        </div>
+      </aside>
+
+      <section class="game-col">
+        <div class="mobile-score-strip">
+          <div class="mobile-stat">
+            <span class="mobile-stat-label">Điểm</span>
+            <span class="mobile-stat-value" id="mobileScore">0</span>
+          </div>
+          <div class="mobile-sep"></div>
+          <div class="mobile-stat">
+            <span class="mobile-stat-label">Kỷ lục</span>
+            <span class="mobile-stat-value" id="mobileBest">0</span>
+          </div>
+          <div class="mobile-sep"></div>
+          <button class="mobile-reset" id="mobileResetBtn">Chơi lại</button>
         </div>
 
-        <!-- Prizes & Rules -->
+        <div class="flappy-wrap" id="flappyWrap">
+          <canvas id="gameCanvas" width="420" height="640" aria-label="Flappy Bird"></canvas>
+          <div class="tap-layer" id="tapLayer">Nhấn Space / Click để bay</div>
+        </div>
+      </section>
+
+      <aside class="side-panel prize-panel">
         <div class="card rules-card">
-          <h3 class="rules-title">🎁 Giải Thưởng &amp; Luật Chơi</h3>
+          <h3 class="rules-title">Giải thưởng theo điểm</h3>
           <div class="prizes-grid">
-            <div class="prize-row"><span class="prize-sq">Ô 4</span><span class="prize-name">🧸 Gấu bông</span></div>
-            <div class="prize-row"><span class="prize-sq">Ô 8</span><span class="prize-name">⛑️ Mũ bảo hiểm</span></div>
-            <div class="prize-row"><span class="prize-sq">Ô 12</span><span class="prize-name">🎒 Ba lô</span></div>
-            <div class="prize-row"><span class="prize-sq">Ô 16</span><span class="prize-name">☂️ Ô dù</span></div>
-            <div class="prize-row grand"><span class="prize-sq">Ô 20</span><span class="prize-name">🎫 Giảm giá 50% cho tất cả tour Hàn Quốc!</span></div>
+            <div class="prize-row"><span class="prize-sq">= 10</span><span class="prize-name">Gấu bông</span></div>
+            <div class="prize-row"><span class="prize-sq">= 20</span><span class="prize-name">Mũ bảo hiểm</span></div>
+            <div class="prize-row"><span class="prize-sq">= 30</span><span class="prize-name">Ba lô</span></div>
+            <div class="prize-row"><span class="prize-sq">= 40</span><span class="prize-name">Ô dù</span></div>
+            <div class="prize-row grand"><span class="prize-sq">= 50</span><span class="prize-name">Giảm giá 50% cho tất cả tour Hàn Quốc!</span></div>
           </div>
-          <div class="divider" style="margin:8px 0;"></div>
+          <div class="divider rules-divider"></div>
           <ul class="rules-list">
-            <li>🪜 <b>Thang</b> = Leo lên!</li>
-            <li>🐍 <b>Rắn</b> = Tụt xuống!</li>
-            <li>↩️ <b>Lượt cuối</b> vượt quá = bật ngược lại!</li>
-            <li>🎲 Chỉ <b>5 lượt</b> mỗi ván!</li>
+            <li>Vượt mỗi cặp ống = +1 điểm.</li>
+            <li>Chạm ống hoặc rơi xuống đất là kết thúc.</li>
+            <li>Nhấn Space, click chuột hoặc chạm màn hình để flap.</li>
+            <li>Chỉ nhận quà khi điểm đúng mốc: 10, 20, 30, 40 hoặc 50.</li>
           </ul>
         </div>
-
       </aside>
     </main>
 
     <footer class="game-footer">
-      🌟 Cung cấp bởi <strong>BestPrice.vn</strong>
+      Cung cấp bởi <strong>BestPrice.vn</strong>
     </footer>
-
-  </div><!-- /page-wrap -->
-
-  <!-- ════ MOBILE STICKY ACTION BAR ════ -->
-  <div class="mob-action-bar" id="mobActionBar">
-    <div class="mob-bar-left">
-      <div class="mob-bar-dice" id="mobBarDice">?</div>
-      <span class="mob-bar-lbl" id="mobBarLbl">Nhấn TUNG!</span>
-    </div>
-    <p class="mob-bar-msg" id="mobBarMsg">🎮 Sẵn sàng chơi!</p>
-    <button class="mob-bar-roll" id="mobRollBtn">🎲 TUNG</button>
   </div>
 
-  <!-- ════ RESULT MODAL ════ -->
+  <div class="mob-action-bar">
+    <div class="mob-left">
+      <span class="mob-pill" id="mobileScorePill">Điểm: 0</span>
+      <span class="mob-pill ghost" id="mobileBestPill">Kỷ lục: 0</span>
+    </div>
+    <button class="mob-flap-btn" id="mobileFlapBtn">Flap</button>
+  </div>
+
   <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true">
     <div class="modal-box" id="modalBox" role="dialog" aria-modal="true">
       <div class="modal-glow"></div>
-
-      <!-- Prize / emoji area — JS sets innerHTML for image or emoji -->
       <div class="modal-prize-area" id="modalEmoji"></div>
-
-      <h2 class="modal-title" id="modalTitle">BẠN ĐÃ THẮNG!</h2>
-      <p  class="modal-sub"   id="modalSub">Quá tuyệt vời!</p>
-      <p  class="modal-prize-desc" id="modalPrizeDesc"></p>
-
+      <h2 class="modal-title" id="modalTitle">Kết quả</h2>
+      <p class="modal-sub" id="modalSub"></p>
+      <p class="modal-prize-desc" id="modalPrizeDesc"></p>
       <div class="modal-stats" id="modalStats"></div>
-
-      <button class="modal-btn" id="modalBtn">🔄 Chơi Lại</button>
+      <button class="modal-btn" id="modalBtn">Chơi lại</button>
     </div>
   </div>
 
-  <script src="game.js"></script>
+  <script nonce="flappy-bp-2026" src="game.js"></script>
 </body>
 </html>

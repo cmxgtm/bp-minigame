@@ -1,713 +1,504 @@
-/* ═══════════════════════════════════════════════
-   SNAKES & LADDERS  —  game.js
-   • 20-square 4×5 snaking board
-   • Randomised snakes & ladders on reset
-   • Step-by-step animated movement
-   • Bounce-back on last roll overshoot
-   • Prize squares: 4 (Teddy Bear), 8 (Helmet),
-     12 (Backpack), 16 (Umbrella), 20 (Voucher)
-   • Mobile sticky bar kept in sync
-═══════════════════════════════════════════════ */
-
-const ROWS = 5, COLS = 4, TOTAL = 20, MAX_ROLLS = 5;
-
-/* ── Prize definitions ─────────────────────── */
 const PRIZES = {
-  4:  { file: 'bear.svg',    name: 'Gấu Bông',       emoji: '🧸', desc: 'Một chú gấu bông dễ thương!' },
-  8:  { file: 'helmet.svg', name: 'Mũ Bảo Hiểm',           emoji: '⛑️', desc: 'Mũ bảo hiểm sành điệu!' },
-  12: { file: 'backpack.svg',      name: 'Ba Lô',         emoji: '🎒', desc: 'Ba lô thời trang!' },
-  16: { file: 'umbrella.svg',      name: 'Ô Dù',         emoji: '☂️', desc: 'Chiếc ô tiện lợi!' },
-  20: { file: 'voucher.svg',       name: 'Giảm giá 50% cho tất cả tour Hàn Quốc', emoji: '🎫', desc: 'Giảm giá 50% cho tất cả tour Hàn Quốc!' },
+  mini10: { exactScore: 10, file: 'bear.svg', name: 'Gấu Bông', emoji: '🧸', desc: 'Một chú gấu bông dễ thương!' },
+  mini20: { exactScore: 20, file: 'helmet.svg', name: 'Mũ Bảo Hiểm', emoji: '🪖', desc: 'Mũ bảo hiểm sành điệu!' },
+  mini30: { exactScore: 30, file: 'backpack.svg', name: 'Ba Lô', emoji: '🎒', desc: 'Ba lô thời trang!' },
+  mini40: { exactScore: 40, file: 'umbrella.svg', name: 'Ô Dù', emoji: '☂️', desc: 'Chiếc ô tiện lợi!' },
+  grand: { exactScore: 50, file: 'voucher.svg', name: 'Giảm giá 50% cho tất cả tour Hàn Quốc', emoji: '🎫', desc: 'Giảm giá 50% cho tất cả tour Hàn Quốc!' }
 };
 
-/* ── Game state ────────────────────────────── */
-let position  = 1;
-let turnsLeft = MAX_ROLLS;
-let rolling   = false;
-let gameOver  = false;
-let snakes    = {};
-let ladders   = {};
-let sqMap     = {};
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
 
-/* ── DOM helper ────────────────────────────── */
-const $ = id => document.getElementById(id);
+const state = {
+  mode: 'idle',
+  score: 0,
+  best: Number(localStorage.getItem('bpFlappyBest') || 0),
+  frame: 0,
+  pipes: [],
+  pipeSpawnGap: 92,
+  bird: {
+    x: canvas.width * 0.26,
+    y: canvas.height * 0.45,
+    radius: 18,
+    vy: 0,
+    rot: 0
+  }
+};
 
-/* ════════════════════════════════════════════
-   INIT
-════════════════════════════════════════════ */
-window.addEventListener('load', () => {
+const physics = {
+  gravity: 0.34,
+  flapImpulse: -6.4,
+  maxDownSpeed: 8.6,
+  pipeSpeed: 2.6,
+  pipeWidth: 72,
+  gapHeight: 170,
+  floorHeight: 82
+};
+
+const ui = {
+  scoreVal: document.getElementById('scoreVal'),
+  bestVal: document.getElementById('bestVal'),
+  mobileScore: document.getElementById('mobileScore'),
+  mobileBest: document.getElementById('mobileBest'),
+  mobileScorePill: document.getElementById('mobileScorePill'),
+  mobileBestPill: document.getElementById('mobileBestPill'),
+  msgCard: document.getElementById('msgCard'),
+  msgText: document.getElementById('msgText'),
+  startBtn: document.getElementById('startBtn'),
+  resetBtn: document.getElementById('resetBtn'),
+  mobileResetBtn: document.getElementById('mobileResetBtn'),
+  mobileFlapBtn: document.getElementById('mobileFlapBtn'),
+  tapLayer: document.getElementById('tapLayer'),
+  modalBackdrop: document.getElementById('modalBackdrop'),
+  modalBox: document.getElementById('modalBox'),
+  modalEmoji: document.getElementById('modalEmoji'),
+  modalTitle: document.getElementById('modalTitle'),
+  modalSub: document.getElementById('modalSub'),
+  modalPrizeDesc: document.getElementById('modalPrizeDesc'),
+  modalStats: document.getElementById('modalStats'),
+  modalBtn: document.getElementById('modalBtn')
+};
+
+const gameBg = new Image();
+gameBg.src = 'background.jpg';
+
+const birdFrames = {
+  up: new Image(),
+  mid: new Image(),
+  down: new Image()
+};
+birdFrames.up.src = '1.svg';
+birdFrames.mid.src = '2.svg';
+birdFrames.down.src = '3.svg';
+
+function init() {
   createStarfield();
-  buildSquareMap();
-  renderBoard();
-  randomiseGame();
-  placePlayer(1, false);
-  updateStats();
-  syncMobBar('🎮 Sẵn sàng? Nhấn TUNG!', '');
-});
-
-window.addEventListener('resize', () => {
-  renderSnakesLadders();
-  placePlayer(position, false);
-});
-
-/* ════════════════════════════════════════════
-   SQUARE MAP  (row/col from top-left)
-════════════════════════════════════════════ */
-function buildSquareMap() {
-  for (let sq = 1; sq <= TOTAL; sq++) {
-    const rowFromBottom = Math.floor((sq - 1) / COLS);
-    const posInRow      = (sq - 1) % COLS;
-    const col = rowFromBottom % 2 === 0 ? posInRow : (COLS - 1 - posInRow);
-    const row = ROWS - 1 - rowFromBottom;
-    sqMap[sq] = { row, col };
-  }
+  bindEvents();
+  resetGame(false);
+  requestAnimationFrame(loop);
 }
 
-/* ════════════════════════════════════════════
-   RENDER BOARD
-════════════════════════════════════════════ */
-function renderBoard() {
-  const grid = $('boardGrid');
-  grid.innerHTML = '';
-
-  const cells = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-  for (let sq = 1; sq <= TOTAL; sq++) {
-    const { row, col } = sqMap[sq];
-    cells[row][col] = sq;
-  }
-
-  /* Warm orange-family pastel palette for board squares */
-  const COLORS = [
-    '#FFF3E0','#FFF8F5','#FFF0E8','#FFFBF0',
-    '#FDEBD0','#FFF9F0','#FEF3E8','#FFF8EE',
-    '#FFFAE4','#FEF5EE','#FFF3E0','#FFFAF4',
-    '#FEF0E4','#FFF9EC','#FFF2EE','#FEF8F4',
-    '#FFF0EC','#FFF3E0','#FEF8E4','#FFFDF0',
-  ];
-
-  let ci = 0;
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const sq  = cells[r][c];
-      const div = document.createElement('div');
-      div.className = 'sq';
-      div.dataset.sq = sq;
-      div.style.background = COLORS[ci++ % COLORS.length];
-      div.style.gridRow    = r + 1;
-      div.style.gridColumn = c + 1;
-
-      /* Square number label */
-      const numSpan = document.createElement('span');
-      numSpan.className = 'sq-num';
-      numSpan.textContent = sq;
-      div.appendChild(numSpan);
-
-      /* Special square icons */
-      const iconSpan = document.createElement('span');
-      iconSpan.className = 'sq-icon';
-      if (sq === 1)  { iconSpan.textContent = '🏁'; div.classList.add('sq-start'); }
-      if (sq === 20) { iconSpan.textContent = '🏆'; div.classList.add('sq-end'); }
-      div.appendChild(iconSpan);
-
-      /* Prize square decoration */
-      if (PRIZES[sq]) {
-        div.classList.add('sq-prize');
-        const img = document.createElement('img');
-        img.className = 'sq-prize-icon';
-        img.src   = PRIZES[sq].file;
-        img.alt   = PRIZES[sq].name;
-        img.title = PRIZES[sq].name;
-        img.onerror = () => { img.style.display = 'none'; };
-        div.appendChild(img);
-      }
-
-      grid.appendChild(div);
-    }
-  }
-}
-
-/* ════════════════════════════════════════════
-   RANDOMISE SNAKES & LADDERS
-════════════════════════════════════════════ */
-function randomiseGame() {
-  /* Prize squares must never be clobbered by snake heads or ladder bases */
-  const prizeSquares = new Set(Object.keys(PRIZES).map(Number));
-  const used = new Set([1, 20, ...prizeSquares]);
-  snakes = {}; ladders = {};
-
-  let tries = 0;
-  while (Object.keys(ladders).length < 2 && tries++ < 300) {
-    const base = rnd(2, 15);
-    const top  = rnd(base + 4, Math.min(19, base + 13));
-    if (!used.has(base) && !used.has(top)) {
-      ladders[base] = top; used.add(base); used.add(top);
-    }
-  }
-  tries = 0;
-  while (Object.keys(snakes).length < 2 && tries++ < 300) {
-    const head = rnd(7, 19);
-    const tail = rnd(Math.max(2, head - 13), head - 4);
-    if (tail > head - 4) continue;
-    if (!used.has(head) && !used.has(tail)) {
-      snakes[head] = tail; used.add(head); used.add(tail);
-    }
-  }
-
-  markSpecialSquares();
-  renderSnakesLadders();
-}
-
-function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-
-function markSpecialSquares() {
-  document.querySelectorAll('.sq').forEach(el => el.classList.remove('sq-ladder-base','sq-snake-head'));
-  Object.keys(ladders).forEach(b => { const el = document.querySelector(`[data-sq="${b}"]`); if (el) el.classList.add('sq-ladder-base'); });
-  Object.keys(snakes) .forEach(h => { const el = document.querySelector(`[data-sq="${h}"]`); if (el) el.classList.add('sq-snake-head'); });
-}
-
-/* ════════════════════════════════════════════
-   SVG SPRITES — LADDERS & SNAKES
-════════════════════════════════════════════ */
-function renderSnakesLadders() {
-  const svg = $('boardSvg');
-  svg.innerHTML = '';
-  Object.entries(ladders).forEach(([b, t]) => drawLadder(svg, +b, +t));
-  Object.entries(snakes) .forEach(([h, t]) => drawSnake (svg, +h, +t));
-}
-
-function sqCenter(num) {
-  const el  = document.querySelector(`[data-sq="${num}"]`);
-  const svg = $('boardSvg');
-  if (!el) return { x: 0, y: 0 };
-  const er = el.getBoundingClientRect();
-  const sr = svg.getBoundingClientRect();
-  return { x: er.left - sr.left + er.width/2, y: er.top - sr.top + er.height/2 };
-}
-
-function mkSvg(tag, attrs) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const el = document.createElementNS(NS, tag);
-  Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k, v));
-  return el;
-}
-
-/* ── LADDER (gold gradient with glow) ─────── */
-function drawLadder(svg, base, top) {
-  const p1 = sqCenter(base), p2 = sqCenter(top);
-  const dx = p2.x-p1.x, dy = p2.y-p1.y;
-  const len = Math.hypot(dx, dy);
-  const pw = 11, px = (-dy/len)*pw, py = (dx/len)*pw;
-  const uid = 'lg'+base+'_'+top;
-
-  const defs = mkSvg('defs',{});
-  const grad = mkSvg('linearGradient',{ id:uid+'_g', gradientUnits:'userSpaceOnUse', x1:p1.x, y1:p1.y, x2:p2.x, y2:p2.y });
-  [['0%','#F37821'],['45%','#FFD000'],['100%','#FFF8A0']].forEach(([o,c]) => {
-    const s = mkSvg('stop',{}); s.setAttribute('offset',o); s.setAttribute('stop-color',c); grad.appendChild(s);
+function bindEvents() {
+  ui.startBtn.addEventListener('click', () => {
+    if (state.mode !== 'running') startGame();
   });
-  defs.appendChild(grad);
-  const filt = mkSvg('filter',{ id:uid+'_f', x:'-40%', y:'-40%', width:'180%', height:'180%' });
-  filt.appendChild(mkSvg('feGaussianBlur',{ stdDeviation:'3', result:'blur' }));
-  filt.appendChild(mkSvg('feComposite',  { in:'SourceGraphic', in2:'blur', operator:'over' }));
-  defs.appendChild(filt); svg.appendChild(defs);
-
-  /* glow halos */
-  [1,-1].forEach(s => svg.appendChild(mkSvg('line',{ x1:p1.x+s*px, y1:p1.y+s*py, x2:p2.x+s*px, y2:p2.y+s*py, stroke:'#FFD000','stroke-width':12,'stroke-linecap':'round', opacity:.25, filter:`url(#${uid}_f)` })));
-  /* shadows */
-  [1,-1].forEach(s => svg.appendChild(mkSvg('line',{ x1:p1.x+s*px+2, y1:p1.y+s*py+3, x2:p2.x+s*px+2, y2:p2.y+s*py+3, stroke:'rgba(0,0,0,.3)','stroke-width':7,'stroke-linecap':'round' })));
-  /* rails */
-  [1,-1].forEach(s => {
-    svg.appendChild(mkSvg('line',{ x1:p1.x+s*px, y1:p1.y+s*py, x2:p2.x+s*px, y2:p2.y+s*py, stroke:`url(#${uid}_g)`,'stroke-width':7,'stroke-linecap':'round' }));
-    svg.appendChild(mkSvg('line',{ x1:p1.x+s*px, y1:p1.y+s*py, x2:p2.x+s*px, y2:p2.y+s*py, stroke:'rgba(255,255,255,.50)','stroke-width':2.5,'stroke-linecap':'round','stroke-dasharray':'4 8' }));
+  ui.resetBtn.addEventListener('click', () => resetGame(true));
+  ui.mobileResetBtn.addEventListener('click', () => resetGame(true));
+  ui.mobileFlapBtn.addEventListener('click', onFlapInput);
+  ui.modalBtn.addEventListener('click', () => {
+    hideModal();
+    resetGame(true);
   });
-  /* rungs */
-  const steps = Math.max(3, Math.floor(len/24));
-  for (let i = 1; i < steps; i++) {
-    const t = i/steps, rx = p1.x+dx*t, ry = p1.y+dy*t;
-    svg.appendChild(mkSvg('line',{ x1:rx+px+1, y1:ry+py+2, x2:rx-px+1, y2:ry-py+2, stroke:'rgba(0,0,0,.25)','stroke-width':5,'stroke-linecap':'round' }));
-    svg.appendChild(mkSvg('line',{ x1:rx+px, y1:ry+py, x2:rx-px, y2:ry-py, stroke:`url(#${uid}_g)`,'stroke-width':5,'stroke-linecap':'round' }));
-    svg.appendChild(mkSvg('line',{ x1:rx+px, y1:ry+py, x2:rx-px, y2:ry-py, stroke:'rgba(255,255,255,.55)','stroke-width':2,'stroke-linecap':'round' }));
-  }
-  /* end caps */
-  [p1,p2].forEach(p => {
-    svg.appendChild(mkSvg('circle',{ cx:p.x+px, cy:p.y+py, r:5, fill:'#FFD000', stroke:'#fff','stroke-width':1.5 }));
-    svg.appendChild(mkSvg('circle',{ cx:p.x-px, cy:p.y-py, r:5, fill:'#FFD000', stroke:'#fff','stroke-width':1.5 }));
+  ui.modalBackdrop.addEventListener('click', e => {
+    if (e.target === ui.modalBackdrop) hideModal();
   });
-  /* top badge */
-  svg.appendChild(mkSvg('circle',{ cx:p2.x, cy:p2.y-16, r:10, fill:'#F37821', opacity:.90 }));
-  const badge = mkSvg('text',{ x:p2.x, y:p2.y-16,'text-anchor':'middle','dominant-baseline':'middle','font-size':13 });
-  badge.textContent = '🪜'; svg.appendChild(badge);
-}
 
-/* ── SNAKE (neon green gradient, cartoon head) */
-function drawSnake(svg, head, tail) {
-  const p1 = sqCenter(head), p2 = sqCenter(tail);
-  const dx = p2.x-p1.x, dy = p2.y-p1.y;
-  const len = Math.hypot(dx, dy);
-  const pw = 24, px = (-dy/len)*pw, py = (dx/len)*pw;
-  const uid = 'sn'+head+'_'+tail;
-
-  const defs = mkSvg('defs',{});
-  const grad = mkSvg('linearGradient',{ id:uid+'_g', gradientUnits:'userSpaceOnUse', x1:p1.x, y1:p1.y, x2:p2.x, y2:p2.y });
-  [['0%','#00E676'],['40%','#00BCD4'],['80%','#76FF03'],['100%','#CCFF90']].forEach(([o,c]) => {
-    const s = mkSvg('stop',{}); s.setAttribute('offset',o); s.setAttribute('stop-color',c); grad.appendChild(s);
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'ArrowUp') {
+      e.preventDefault();
+      onFlapInput();
+    }
   });
-  defs.appendChild(grad);
-  const filt = mkSvg('filter',{ id:uid+'_f', x:'-50%', y:'-50%', width:'200%', height:'200%' });
-  filt.appendChild(mkSvg('feGaussianBlur',{ stdDeviation:'4', result:'blur' }));
-  filt.appendChild(mkSvg('feComposite',  { in:'SourceGraphic', in2:'blur', operator:'over' }));
-  defs.appendChild(filt); svg.appendChild(defs);
 
-  const q1 = { x:p1.x+dx*.25+px, y:p1.y+dy*.25+py };
-  const q2 = { x:p1.x+dx*.50-px, y:p1.y+dy*.50-py };
-  const q3 = { x:p1.x+dx*.75+px, y:p1.y+dy*.75+py };
-  const d  = `M ${p1.x} ${p1.y} Q ${q1.x} ${q1.y} ${p1.x+dx*.375} ${p1.y+dy*.375} Q ${q2.x} ${q2.y} ${p1.x+dx*.625} ${p1.y+dy*.625} Q ${q3.x} ${q3.y} ${p2.x} ${p2.y}`;
-
-  svg.appendChild(mkSvg('path',{ d, fill:'none', stroke:'#00E676','stroke-width':18,'stroke-linecap':'round', opacity:.22, filter:`url(#${uid}_f)` }));
-  svg.appendChild(mkSvg('path',{ d, fill:'none', stroke:'rgba(0,0,0,.32)','stroke-width':13,'stroke-linecap':'round','stroke-linejoin':'round' }));
-  svg.appendChild(mkSvg('path',{ d, fill:'none', stroke:`url(#${uid}_g)`,'stroke-width':11,'stroke-linecap':'round','stroke-linejoin':'round' }));
-  svg.appendChild(mkSvg('path',{ d, fill:'none', stroke:'rgba(255,255,255,.38)','stroke-width':4,'stroke-linecap':'round','stroke-dasharray':'5 9' }));
-
-  /* Head */
-  svg.appendChild(mkSvg('circle',{ cx:p1.x, cy:p1.y, r:16, fill:'#00E676', opacity:.28, filter:`url(#${uid}_f)` }));
-  svg.appendChild(mkSvg('circle',{ cx:p1.x, cy:p1.y, r:14, fill:'#00C853', stroke:'#fff','stroke-width':2 }));
-  svg.appendChild(mkSvg('circle',{ cx:p1.x, cy:p1.y, r:11, fill:'#00E676' }));
-  svg.appendChild(mkSvg('ellipse',{ cx:p1.x-6, cy:p1.y+4, rx:3.5, ry:2, fill:'rgba(255,80,80,.45)' }));
-  svg.appendChild(mkSvg('ellipse',{ cx:p1.x+6, cy:p1.y+4, rx:3.5, ry:2, fill:'rgba(255,80,80,.45)' }));
-  [-4,4].forEach(ex => {
-    svg.appendChild(mkSvg('circle',{ cx:p1.x+ex, cy:p1.y-3, r:3.2, fill:'#fff' }));
-    svg.appendChild(mkSvg('circle',{ cx:p1.x+ex, cy:p1.y-3, r:1.6, fill:'#1a1a2e' }));
-    svg.appendChild(mkSvg('circle',{ cx:p1.x+ex+.8, cy:p1.y-3.8, r:.7, fill:'#fff' }));
-  });
-  svg.appendChild(mkSvg('line',{ x1:p1.x, y1:p1.y+10, x2:p1.x-3, y2:p1.y+15, stroke:'#FF1744','stroke-width':1.8,'stroke-linecap':'round' }));
-  svg.appendChild(mkSvg('line',{ x1:p1.x, y1:p1.y+10, x2:p1.x+3, y2:p1.y+15, stroke:'#FF1744','stroke-width':1.8,'stroke-linecap':'round' }));
-  /* Tail */
-  svg.appendChild(mkSvg('circle',{ cx:p2.x, cy:p2.y, r:7, fill:'#CCFF90', stroke:'rgba(255,255,255,.5)','stroke-width':1.5 }));
+  canvas.addEventListener('mousedown', onFlapInput);
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    onFlapInput();
+  }, { passive: false });
 }
 
-/* ════════════════════════════════════════════
-   PLAYER POSITIONING
-════════════════════════════════════════════ */
-function placePlayer(sq, animate, animClass = 'hop') {
-  const tok  = $('playerToken');
-  const wrap = $('boardWrap');
-  const sqEl = document.querySelector(`[data-sq="${sq}"]`);
-  if (!sqEl || !wrap) return;
-
-  const wr = wrap.getBoundingClientRect();
-  const sr = sqEl.getBoundingClientRect();
-  tok.style.left = (sr.left - wr.left + sr.width/2)  + 'px';
-  tok.style.top  = (sr.top  - wr.top  + sr.height/2) + 'px';
-
-  if (animate) {
-    tok.classList.remove('hop','slide','climb','bounce');
-    void tok.offsetWidth; // force reflow
-    tok.classList.add(animClass);
-    setTimeout(() => tok.classList.remove(animClass), 500);
+function onFlapInput() {
+  if (state.mode === 'idle') {
+    startGame();
+  }
+  if (state.mode === 'running') {
+    flap();
+  }
+  if (state.mode === 'gameover') {
+    resetGame(true);
+    startGame();
   }
 }
 
-/* ════════════════════════════════════════════
-   PRIZE ODDS  (last roll only)
-   Grand prize sq20 : 0.02%  independent
-   Mini prize sq4/8/12/16 : 15% each independent
-   Returns a forced dice value (1-6) or null
-════════════════════════════════════════════ */
-function computeLastRoll(pos) {
-  const GRAND_CHANCE = 0.0002;   // 0.02%
-  const MINI_CHANCE  = 0.15;     // 15%
-
-  // Build every (roll → prize_sq) mapping reachable from pos.
-  // Two paths to a prize square:
-  //   Direct : pos + roll === sq           → roll = sq - pos
-  //   Bounce : pos + roll > 20 → land at (20 - overshoot) === sq
-  //            overshoot = pos + roll - 20, so sq = 20 - (pos+roll-20) = 40 - pos - roll
-  //            → roll = 40 - pos - sq  (only valid if sq < 20)
-  const candidates = [];
-  for (const sqStr of Object.keys(PRIZES)) {
-    const sq = +sqStr;
-
-    const directRoll = sq - pos;
-    if (directRoll >= 1 && directRoll <= 6) {
-      candidates.push({ roll: directRoll, sq });
-    }
-
-    if (sq < 20) {
-      const bounceRoll = 40 - pos - sq;
-      if (bounceRoll >= 1 && bounceRoll <= 6) {
-        candidates.push({ roll: bounceRoll, sq });
-      }
-    }
-  }
-
-  // Evaluate each candidate independently.
-  // Grand prize wins over any mini prize if both fire.
-  let forcedRoll = null;
-  let foundGrand = false;
-
-  for (const c of candidates) {
-    const isGrand  = (c.sq === 20);
-    const chance   = isGrand ? GRAND_CHANCE : MINI_CHANCE;
-
-    if (Math.random() < chance) {
-      if (isGrand) {
-        forcedRoll = c.roll;
-        foundGrand = true;
-        break;          // grand prize takes priority, stop immediately
-      } else if (!foundGrand && forcedRoll === null) {
-        forcedRoll = c.roll;  // first mini-prize that fires wins
-      }
-    }
-  }
-
-  return forcedRoll;   // null → caller uses normal random roll
-}
-
-/* ════════════════════════════════════════════
-   ROLL DICE  (main game loop)
-════════════════════════════════════════════ */
-async function rollDice() {
-  if (rolling || gameOver || turnsLeft <= 0) return;
-
-  rolling = true;
-  setRollDisabled(true);
-  addRipple($('rollBtn'));
-
-  /* Capture whether this is the last roll BEFORE decrement */
-  const isLastRoll = (turnsLeft === 1);
-
-  /* Animate dice */
-  const diceBox  = $('dice');
-  const mobDice  = $('mobBarDice');
-  diceBox.classList.add('rolling');
-  if (mobDice) mobDice.classList.add('rolling');
-
-  let flashTimer = setInterval(() => {
-    const v = Math.ceil(Math.random() * 6);
-    $('diceVal').textContent = v;
-    if (mobDice) mobDice.textContent = v;
-  }, 75);
-
-  await sleep(650);
-  clearInterval(flashTimer);
-  diceBox.classList.remove('rolling');
-  if (mobDice) mobDice.classList.remove('rolling');
-
-  const roll = isLastRoll
-    ? (computeLastRoll(position) ?? Math.ceil(Math.random() * 6))
-    : Math.ceil(Math.random() * 6);
-  $('diceVal').textContent = roll;
-  if (mobDice) mobDice.textContent = roll;
-
-  const rl = $('rollLabel');
-  if (rl) rl.textContent = isLastRoll ? `⚠️ Lượt cuối: ${roll}!` : `Bạn tung được: ${roll} 🎲`;
-  const ml = $('mobBarLbl');
-  if (ml) ml.textContent = isLastRoll ? `Cuối! Tung ${roll}` : `Tung: ${roll}`;
-
-  /* Decrement turns */
-  turnsLeft--;
-  updateStats();
-
-  /* ── MOVEMENT PHASE ── */
-  let didBounce = false;
-
-  if (position + roll > TOTAL) {
-    /* BOUNCE-BACK on ANY roll: walk forward to 20, then bounce back by overshoot */
-    const overshoot    = (position + roll) - TOTAL;
-    const bounceTarget = TOTAL - overshoot;
-
-    /* Step forward to TOTAL */
-    for (let p = position + 1; p <= TOTAL; p++) {
-      position = p;
-      placePlayer(p, true, 'hop');
-      await sleep(200);
-      updateStats();
-    }
-
-    setMsg(`↩️ Quá xa! Bật ngược ${overshoot} bước…`, 'bounce-msg');
-    await sleep(480);
-
-    /* Step backward from TOTAL to bounceTarget */
-    for (let p = TOTAL - 1; p >= bounceTarget; p--) {
-      position = p;
-      placePlayer(p, true, 'bounce');
-      await sleep(200);
-      updateStats();
-    }
-
-    didBounce = true;
-
-  } else {
-    /* Normal movement — snapshot target BEFORE mutating position */
-    const target = position + roll;
-    for (let p = position + 1; p <= target; p++) {
-      position = p;
-      placePlayer(p, true, 'hop');
-      await sleep(230);
-      updateStats();
-    }
-  }
-
-  /* ── SNAKE / LADDER CHECK (runs after bounce or normal move) ── */
-  if (ladders[position]) {
-    const dest = ladders[position];
-    setMsg(`🪜 THANG! Leo từ ${position} → ${dest}!`, 'ladder-msg');
-    await sleep(550);
-    position = dest;
-    placePlayer(dest, true, 'climb');
-    await sleep(350);
-    updateStats();
-
-  } else if (snakes[position]) {
-    const dest = snakes[position];
-    setMsg(`🐍 RẮN! Tụt từ ${position} → ${dest}!`, 'snake-msg');
-    await sleep(550);
-    position = dest;
-    placePlayer(dest, true, 'slide');
-    await sleep(350);
-    updateStats();
-
-  } else if (didBounce) {
-    setMsg(`↩️ Bật ngược về Ô ${position}.`, 'bounce-msg');
-  } else {
-    setMsg(`🎲 Tung ${roll}! Hiện tại ở Ô ${position}.`, '');
-  }
-
-  /* ── PRIZE / WIN CHECK ── */
-  /* Square 20 (grand prize) always ends the game immediately on any roll.
-     Mini prizes (4,8,12,16) only trigger on the last roll. */
-  if (position === 20) {
-    await sleep(400);
-    setMsg('🏆 TRÚNG LỚN! Bạn đã đến Ô 20!', 'win');
-    $('boardWrap').classList.add('game-end');
-    setTimeout(() => $('boardWrap').classList.remove('game-end'), 800);
-    gameOver = true;
-    await sleep(700);
-    showModal(20, MAX_ROLLS - turnsLeft);
-    rolling = false;
-    return;
-  }
-
-  if (isLastRoll && PRIZES[position]) {
-    await sleep(400);
-    const prize = PRIZES[position];
-    setMsg(`🎁 Trúng giải! Bạn dừng tại Ô ${position} — ${prize.emoji} ${prize.name}!`, 'prize-msg');
-    gameOver = true;
-    await sleep(700);
-    showModal(position, MAX_ROLLS - turnsLeft);
-    rolling = false;
-    return;
-  }
-
-  /* ── OUT OF ROLLS (no prize) ── */
-  if (turnsLeft <= 0) {
-    await sleep(700);
-    setMsg(`😢 Hết lượt! Dừng tại Ô ${position}. Không trúng giải lần này.`, 'lose');
-    gameOver = true;
-    await sleep(700);
-    showModal(position, MAX_ROLLS);
-    rolling = false;
-    return;
-  }
-
-  rolling = false;
-  setRollDisabled(false);
-}
-
-/* ════════════════════════════════════════════
-   RESET
-════════════════════════════════════════════ */
-function resetGame() {
+function startGame() {
   hideModal();
-  position  = 1;
-  turnsLeft = MAX_ROLLS;
-  rolling   = false;
-  gameOver  = false;
-
-  randomiseGame();
-  placePlayer(1, false);
-  updateStats();
-  setMsg('🔄 Bàn mới! Giải thưởng mới. Chúc may mắn!', '');
-  syncMobBar('🔄 Bàn mới! Chúc may mắn!', '');
-
-  $('diceVal').textContent = '?';
-  const mobD = $('mobBarDice'); if (mobD) mobD.textContent = '?';
-  const rl   = $('rollLabel');  if (rl)   rl.textContent   = 'Tung xúc xắc để bắt đầu!';
-  const ml   = $('mobBarLbl'); if (ml)   ml.textContent   = 'Nhấn TUNG!';
-  setRollDisabled(false);
+  state.mode = 'running';
+  ui.tapLayer.classList.remove('show');
+  setMessage('Nhấn hoặc Space để vượt ống. Cố lên!', 'good');
+  disableStart(true);
 }
 
-/* ════════════════════════════════════════════
-   UI HELPERS
-════════════════════════════════════════════ */
-function updateStats() {
-  const tv = `${turnsLeft} / ${MAX_ROLLS}`;
-  const pv = `Ô ${position}`;
-  const isLast = turnsLeft === 1 && !gameOver;
+function resetGame(showHint) {
+  state.mode = 'idle';
+  state.score = 0;
+  state.frame = 0;
+  state.pipes = [];
+  state.bird.x = canvas.width * 0.26;
+  state.bird.y = canvas.height * 0.45;
+  state.bird.vy = 0;
+  state.bird.rot = 0;
 
-  const tvEl = $('turnsVal');
-  if (tvEl) {
-    tvEl.textContent = tv;
-    tvEl.className   = 'stat-val' + (isLast ? ' last-roll-warning' : '');
+  disableStart(false);
+  updateScoreUI();
+  if (showHint) {
+    setMessage('Vẫn mới, sẵn sàng. Nhấn BẮT ĐẦU để chơi.', 'warn');
+  } else {
+    setMessage('Sẵn sàng? Nhấn BẮT ĐẦU rồi click/space để flap.', '');
   }
-  const pvEl = $('posVal');
-  if (pvEl) pvEl.textContent = pv;
+  ui.tapLayer.classList.add('show');
+}
 
-  /* Mobile strip */
-  const mt = $('mobTurns');
-  if (mt) {
-    mt.textContent = tv;
-    mt.className   = 'mob-stat-val' + (isLast ? ' last-roll-warning' : '');
+function flap() {
+  state.bird.vy = physics.flapImpulse;
+  state.bird.rot = -0.22;
+}
+
+function loop() {
+  state.frame += 1;
+
+  if (state.mode === 'running') {
+    updateBird();
+    updatePipes();
+    detectGameOver();
+  } else if (state.mode === 'idle') {
+    idleFloatBird();
   }
-  const mp = $('mobPos');
-  if (mp) mp.textContent = `Ô ${position}`;
+
+  render();
+  requestAnimationFrame(loop);
 }
 
-function setMsg(text, cls) {
-  const card = $('msgCard');
-  if (card) {
-    card.className = 'card msg-card' + (cls ? ' ' + cls : '');
-    const mt = $('msgText'); if (mt) mt.textContent = text;
+function idleFloatBird() {
+  state.bird.y = canvas.height * 0.45 + Math.sin(state.frame * 0.08) * 8;
+  state.bird.rot = Math.sin(state.frame * 0.06) * 0.06;
+}
+
+function updateBird() {
+  state.bird.vy = Math.min(state.bird.vy + physics.gravity, physics.maxDownSpeed);
+  state.bird.y += state.bird.vy;
+  state.bird.rot = clamp((state.bird.vy / 10) * 0.55, -0.24, 0.35);
+}
+
+function updatePipes() {
+  if (state.frame % state.pipeSpawnGap === 0) {
+    spawnPipe();
   }
-  syncMobBar(text, cls);
+
+  for (const pipe of state.pipes) {
+    pipe.x -= physics.pipeSpeed;
+
+    if (!pipe.passed && pipe.x + physics.pipeWidth < state.bird.x) {
+      pipe.passed = true;
+      state.score += 1;
+      if (state.score > state.best) {
+        state.best = state.score;
+        localStorage.setItem('bpFlappyBest', String(state.best));
+      }
+      updateScoreUI();
+      setMessage(`Tốt! Điểm hiện tại: ${state.score}`, 'good');
+    }
+  }
+
+  state.pipes = state.pipes.filter(pipe => pipe.x + physics.pipeWidth > -20);
 }
 
-function syncMobBar(text, cls) {
-  const mob = $('mobBarMsg');
-  if (!mob) return;
-  mob.className   = 'mob-bar-msg' + (cls ? ' ' + cls : '');
-  mob.textContent = text;
+function spawnPipe() {
+  const marginTop = 90;
+  const marginBottom = physics.floorHeight + 80;
+  const minGapY = marginTop + physics.gapHeight / 2;
+  const maxGapY = canvas.height - marginBottom - physics.gapHeight / 2;
+  const gapY = randomInt(minGapY, maxGapY);
+
+  state.pipes.push({
+    x: canvas.width + 16,
+    gapY,
+    passed: false
+  });
 }
 
-function setRollDisabled(disabled) {
-  const rb  = $('rollBtn');
-  const mrb = $('mobRollBtn');
-  if (rb)  rb.disabled  = disabled;
-  if (mrb) mrb.disabled = disabled;
+function detectGameOver() {
+  const birdTop = state.bird.y - state.bird.radius;
+  const birdBottom = state.bird.y + state.bird.radius;
+  const floorY = canvas.height - physics.floorHeight;
+
+  if (birdTop <= 0 || birdBottom >= floorY) {
+    finishGame();
+    return;
+  }
+
+  for (const pipe of state.pipes) {
+    const pipeLeft = pipe.x;
+    const pipeRight = pipe.x + physics.pipeWidth;
+    const inPipeX = state.bird.x + state.bird.radius > pipeLeft && state.bird.x - state.bird.radius < pipeRight;
+
+    if (!inPipeX) continue;
+
+    const gapTop = pipe.gapY - physics.gapHeight / 2;
+    const gapBottom = pipe.gapY + physics.gapHeight / 2;
+    const hitUpper = birdTop < gapTop;
+    const hitLower = birdBottom > gapBottom;
+
+    if (hitUpper || hitLower) {
+      finishGame();
+      return;
+    }
+  }
 }
 
-function addRipple(btn) {
-  if (!btn) return;
-  const span = document.createElement('span');
-  span.className = 'ripple';
-  btn.appendChild(span);
-  setTimeout(() => span.remove(), 600);
+function finishGame() {
+  state.mode = 'gameover';
+  disableStart(false);
+  const reward = resolvePrizeByScore(state.score);
+  setMessage(`Game over! Bạn đạt ${state.score} điểm.`, 'bad');
+  showModal(state.score, reward);
+  if (reward && reward.key === 'grand') celebrate();
 }
 
-function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
+function resolvePrizeByScore(score) {
+  const matchedPrize = Object.entries(PRIZES).find(([, prize]) => prize.exactScore === score);
+  if (matchedPrize) {
+    const [key, prize] = matchedPrize;
+    return { key, ...prize };
+  }
+  return null;
+}
 
+function render() {
+  drawSky();
+  drawPipes();
+  drawGround();
+  drawBird();
+  drawScoreOverlay();
+}
 
-/* ════════════════════════════════════════════
-   RESULT MODAL
-   Prize is determined solely by finalPos:
-     sq 20       → grand prize (voucher)
-     sq 4/8/12/16 → corresponding mini prize
-     anything else → no prize
-════════════════════════════════════════════ */
+function drawSky() {
+  if (gameBg.complete && gameBg.naturalWidth > 0) {
+    ctx.drawImage(gameBg, 0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(10, 3, 0, 0.24)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, '#3A1600');
+    grad.addColorStop(0.6, '#2B0F00');
+    grad.addColorStop(1, '#180600');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
-/* Render SVG as <img> with cache-bust so the browser never reuses a stale render */
+  ctx.globalAlpha = 0.15;
+  for (let i = 0; i < 6; i++) {
+    const x = (state.frame * 0.25 + i * 95) % (canvas.width + 80) - 80;
+    const y = 80 + i * 70;
+    ctx.fillStyle = '#FFD0A0';
+    roundRect(ctx, x, y, 76, 24, 12);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPipes() {
+  for (const pipe of state.pipes) {
+    const topH = pipe.gapY - physics.gapHeight / 2;
+    const bottomY = pipe.gapY + physics.gapHeight / 2;
+    const bottomH = canvas.height - physics.floorHeight - bottomY;
+
+    drawPipeSegment(pipe.x, 0, physics.pipeWidth, topH, true);
+    drawPipeSegment(pipe.x, bottomY, physics.pipeWidth, bottomH, false);
+  }
+}
+
+function drawPipeSegment(x, y, w, h, isTop) {
+  if (h <= 0) return;
+
+  const grad = ctx.createLinearGradient(x, y, x + w, y);
+  grad.addColorStop(0, '#F37821');
+  grad.addColorStop(0.5, '#FF9A4D');
+  grad.addColorStop(1, '#BC542F');
+
+  ctx.fillStyle = grad;
+  roundRect(ctx, x, y, w, h, 10);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.24)';
+  roundRect(ctx, x + 8, y + 8, 9, h - 16, 4);
+  ctx.fill();
+
+  const lipH = 18;
+  const lipY = isTop ? h - lipH : y;
+  ctx.fillStyle = '#FFD0A0';
+  roundRect(ctx, x - 4, lipY, w + 8, lipH, 6);
+  ctx.fill();
+}
+
+function drawGround() {
+  const floorY = canvas.height - physics.floorHeight;
+  const grad = ctx.createLinearGradient(0, floorY, 0, canvas.height);
+  grad.addColorStop(0, '#D96027');
+  grad.addColorStop(1, '#8A3C1B');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, floorY, canvas.width, physics.floorHeight);
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+  for (let i = 0; i < 12; i++) {
+    const x = ((state.frame * 1.4) + i * 44) % (canvas.width + 44) - 44;
+    ctx.fillRect(x, floorY + 12, 18, 6);
+  }
+}
+
+function drawBird() {
+  ctx.save();
+  ctx.translate(state.bird.x, state.bird.y);
+  ctx.rotate(state.bird.rot);
+
+  const frame = pickBirdFrame();
+  const birdSize = state.bird.radius * 2.8;
+
+  if (frame && frame.complete && frame.naturalWidth > 0) {
+    ctx.drawImage(frame, -birdSize / 2, -birdSize / 2, birdSize, birdSize);
+  } else {
+    // Fallback if SVGs are still loading.
+    ctx.beginPath();
+    ctx.arc(0, 0, state.bird.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFD0A0';
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function pickBirdFrame() {
+  if (state.mode === 'idle') {
+    const idleCycle = Math.floor(state.frame / 10) % 3;
+    if (idleCycle === 0) return birdFrames.up;
+    if (idleCycle === 1) return birdFrames.mid;
+    return birdFrames.down;
+  }
+
+  if (state.bird.vy < -1.4) return birdFrames.up;
+  if (state.bird.vy > 2.2) return birdFrames.down;
+  return birdFrames.mid;
+}
+
+function drawScoreOverlay() {
+  ctx.fillStyle = 'rgba(0,0,0,0.26)';
+  roundRect(ctx, 10, 10, 120, 44, 10);
+  ctx.fill();
+
+  ctx.fillStyle = '#FFD0A0';
+  ctx.font = '14px Montserrat Alternates, sans-serif';
+  ctx.fillText(`Điểm: ${state.score}`, 20, 38);
+
+  if (state.mode === 'idle') {
+    ctx.fillStyle = 'rgba(255, 208, 160, 0.95)';
+    ctx.font = '20px Montserrat Alternates, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Flappy BestPrice', canvas.width / 2, 92);
+    ctx.textAlign = 'start';
+  }
+}
+
+function updateScoreUI() {
+  ui.scoreVal.textContent = state.score;
+  ui.bestVal.textContent = state.best;
+  ui.mobileScore.textContent = state.score;
+  ui.mobileBest.textContent = state.best;
+  ui.mobileScorePill.textContent = `Điểm: ${state.score}`;
+  ui.mobileBestPill.textContent = `Kỷ lục: ${state.best}`;
+}
+
+function setMessage(text, styleClass) {
+  ui.msgText.textContent = text;
+  ui.msgCard.className = 'card msg-card' + (styleClass ? ` ${styleClass}` : '');
+}
+
+function disableStart(disabled) {
+  ui.startBtn.disabled = disabled;
+  ui.startBtn.textContent = disabled ? 'Đang chơi' : 'Bắt đầu';
+}
+
 function svgImg(src, cls, alt) {
   const cb = `?v=${Date.now()}`;
-  return `<img src="${src}${cb}" class="${cls}" alt="${alt}" onerror="this.style.opacity='0'" />`;
+  return `<img src="${src}${cb}" class="${cls}" alt="${alt}" />`;
 }
 
-function showModal(finalPos, rollsUsed) {
-  const backdrop = $('modalBackdrop');
-  const box      = $('modalBox');
-  box.classList.remove('modal-grand', 'modal-prize', 'modal-lose');
-
-  const prizeArea = $('modalEmoji');
-
-  if (finalPos === 20) {
-    /* ── GRAND PRIZE: player landed on sq 20 ── */
-    box.classList.add('modal-grand');
-    prizeArea.innerHTML = svgImg('voucher.svg', 'modal-prize-img grand-img', 'Grand Prize Voucher');
-    $('modalTitle').textContent = '🎉 TRÚNG LỚN!';
-    $('modalSub').textContent   = 'Bạn đã trúng GIẢI LỚN!';
-    const pd = $('modalPrizeDesc');
-    pd.className = 'modal-prize-desc';
-    pd.innerHTML = `<strong>Giảm 7,5 Triệu VND</strong> cho đơn hàng nhóm tiếp theo của bạn!`;
-    celebrate();
-
-  } else if (PRIZES[finalPos]) {
-    /* ── MINI PRIZE: player landed on sq 4, 8, 12 or 16 ── */
-    const prize = PRIZES[finalPos];
-    box.classList.add('modal-prize');
-    prizeArea.innerHTML = svgImg(prize.file, 'modal-prize-img', prize.name);
-    $('modalTitle').textContent = '🎁 BẠN NHẬN QUÀ!';
-    $('modalSub').textContent   = `Bạn dừng tại Ô ${finalPos}!`;
-    const pd = $('modalPrizeDesc');
-    pd.className = 'modal-prize-desc';
-    pd.innerHTML = `${prize.emoji} <strong>${prize.name}</strong>`;
-
+function showModal(score, reward) {
+  if (reward) {
+    if (reward.key === 'grand') {
+      ui.modalEmoji.innerHTML = svgImg(reward.file, 'modal-prize-img grand-img', reward.name);
+      ui.modalTitle.textContent = 'Trúng lớn!';
+      ui.modalSub.textContent = 'Bạn đã đạt cột mốc giải đặc biệt.';
+      ui.modalPrizeDesc.innerHTML = `<strong>${reward.desc}</strong>`;
+    } else {
+      ui.modalEmoji.innerHTML = svgImg(reward.file, 'modal-prize-img', reward.name);
+      ui.modalTitle.textContent = 'Bạn nhận quà!';
+      ui.modalSub.textContent = `Điểm của bạn: ${score}`;
+      ui.modalPrizeDesc.innerHTML = `${reward.emoji} <strong>${reward.name}</strong>`;
+    }
   } else {
-    /* ── NO PRIZE ── */
-    box.classList.add('modal-lose');
-    prizeArea.innerHTML = `<span class="modal-emoji-text">😢</span>`;
-    $('modalTitle').textContent = 'RẤT TIẾC!';
-    $('modalSub').textContent   = 'Không trúng giải lần này — chúc may mắn lần sau!';
-    const pd = $('modalPrizeDesc');
-    pd.className   = 'modal-prize-desc no-prize';
-    pd.textContent = `Bạn dừng tại Ô ${finalPos}. Thử lại nhé!`;
+    ui.modalEmoji.innerHTML = '<span class="modal-emoji-text">😢</span>';
+    ui.modalTitle.textContent = 'Rất tiếc!';
+    ui.modalSub.textContent = `Bạn đạt ${score} điểm.`;
+    ui.modalPrizeDesc.textContent = 'Chưa đạt mốc quà thưởng. Thử lại nhé!';
   }
 
-  $('modalStats').innerHTML = `
-    <div class="modal-stat-pill">Ô Cuối<span>${finalPos}</span></div>
-    <div class="modal-stat-pill">Số Lượt<span>${rollsUsed} / ${MAX_ROLLS}</span></div>
+  ui.modalStats.innerHTML = `
+    <div class="modal-stat-pill">Điểm<span>${score}</span></div>
+    <div class="modal-stat-pill">Kỷ lục<span>${state.best}</span></div>
   `;
 
-  backdrop.classList.add('show');
-  backdrop.setAttribute('aria-hidden', 'false');
+  ui.modalBackdrop.classList.add('show');
+  ui.modalBackdrop.setAttribute('aria-hidden', 'false');
 }
 
 function hideModal() {
-  const bd = $('modalBackdrop');
-  if (bd) { bd.classList.remove('show'); bd.setAttribute('aria-hidden','true'); }
+  ui.modalBackdrop.classList.remove('show');
+  ui.modalBackdrop.setAttribute('aria-hidden', 'true');
 }
 
-/* ════════════════════════════════════════════
-   CONFETTI  (grand prize celebration)
-════════════════════════════════════════════ */
 function celebrate() {
-  const icons = ['🎉','🧡','⭐','✨','🎊','🎫','🎈','💫','🔥'];
+  const icons = ['🎉', '✨', '🎊', '🏆', '🎁', '🔥', '💫', '⭐', '👏'];
   for (let i = 0; i < 28; i++) {
     setTimeout(() => {
       const el = document.createElement('div');
       el.className = 'confetti-piece';
       el.textContent = icons[Math.floor(Math.random() * icons.length)];
-      el.style.setProperty('--cf-dur',  (1.4 + Math.random()*1.3) + 's');
-      el.style.setProperty('--cf-del',  '0s');
-      el.style.setProperty('--cf-size', (0.9 + Math.random()*1.2) + 'rem');
-      el.style.left = (Math.random()*100) + 'vw';
+      el.style.setProperty('--cf-dur', (1.4 + Math.random() * 1.3) + 's');
+      el.style.setProperty('--cf-size', (0.9 + Math.random() * 1.2) + 'rem');
+      el.style.left = (Math.random() * 100) + 'vw';
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 3500);
     }, i * 80);
   }
 }
 
-/* ════════════════════════════════════════════
-   STARFIELD
-════════════════════════════════════════════ */
 function createStarfield() {
-  const c = $('starfield');
+  const c = document.getElementById('starfield');
   for (let i = 0; i < 80; i++) {
     const s = document.createElement('div');
     s.className = 'star';
-    const size = 1 + Math.random() * 2.0;
-    s.style.cssText = `left:${Math.random()*100}%;top:${Math.random()*100}%;width:${size}px;height:${size}px;--dur:${1.5+Math.random()*2.5}s;--del:${Math.random()*3}s;`;
+    const size = 1 + Math.random() * 2;
+    s.style.cssText = `left:${Math.random() * 100}%;top:${Math.random() * 100}%;width:${size}px;height:${size}px;--dur:${1.5 + Math.random() * 2.5}s;--del:${Math.random() * 3}s;`;
     c.appendChild(s);
   }
 }
 
-/* ════════════════════════════════════════════
-   WIRE UP BUTTONS
-════════════════════════════════════════════ */
-document.addEventListener('DOMContentLoaded', () => {
-  $('rollBtn')      .addEventListener('click', rollDice);
-  $('resetBtn')     .addEventListener('click', resetGame);
-  $('modalBtn')     .addEventListener('click', resetGame);
-  $('mobRollBtn')   .addEventListener('click', rollDice);
-  $('mobResetBtn')  .addEventListener('click', resetGame);
-  $('modalBackdrop').addEventListener('click', e => {
-    if (e.target === $('modalBackdrop')) hideModal();
-  });
-});
+function roundRect(context, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.arcTo(x + width, y, x + width, y + height, r);
+  context.arcTo(x + width, y + height, x, y + height, r);
+  context.arcTo(x, y + height, x, y, r);
+  context.arcTo(x, y, x + width, y, r);
+  context.closePath();
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+init();
